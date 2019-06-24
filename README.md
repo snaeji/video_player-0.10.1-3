@@ -1,5 +1,8 @@
 # Video player plugin edited to default to Icelandic subtitles when included in HLS streams and optionally load VTT subtitle files.
 
+# video_player-0.10.1-3
+
+
 Works with https://github.com/snaeji/chewie-0.9.7
 
 # Video Player plugin for Flutter
@@ -115,4 +118,3 @@ class _VideoAppState extends State<VideoApp> {
   }
 }
 ```
-# video_player-0.10.1-3
