@@ -11,29 +11,41 @@ import android.content.Context;
 import android.net.Uri;
 import android.os.Build;
 import android.util.LongSparseArray;
+import android.util.Pair;
 import android.view.Surface;
+import android.widget.CheckedTextView;
+
+
 import com.google.android.exoplayer2.C;
 import com.google.android.exoplayer2.ExoPlaybackException;
 import com.google.android.exoplayer2.ExoPlayerFactory;
 import com.google.android.exoplayer2.Format;
 import com.google.android.exoplayer2.Player;
 import com.google.android.exoplayer2.Player.EventListener;
+import com.google.android.exoplayer2.RendererCapabilities;
 import com.google.android.exoplayer2.SimpleExoPlayer;
 import com.google.android.exoplayer2.audio.AudioAttributes;
 import com.google.android.exoplayer2.extractor.DefaultExtractorsFactory;
 import com.google.android.exoplayer2.source.ExtractorMediaSource;
 import com.google.android.exoplayer2.source.MediaSource;
+import com.google.android.exoplayer2.source.MergingMediaSource;
+import com.google.android.exoplayer2.source.SingleSampleMediaSource;
+import com.google.android.exoplayer2.source.TrackGroup;
+import com.google.android.exoplayer2.source.TrackGroupArray;
 import com.google.android.exoplayer2.source.dash.DashMediaSource;
 import com.google.android.exoplayer2.source.dash.DefaultDashChunkSource;
 import com.google.android.exoplayer2.source.hls.HlsMediaSource;
 import com.google.android.exoplayer2.source.smoothstreaming.DefaultSsChunkSource;
 import com.google.android.exoplayer2.source.smoothstreaming.SsMediaSource;
+import com.google.android.exoplayer2.text.TextRenderer;
 import com.google.android.exoplayer2.trackselection.DefaultTrackSelector;
+import com.google.android.exoplayer2.trackselection.MappingTrackSelector;
 import com.google.android.exoplayer2.trackselection.TrackSelector;
 import com.google.android.exoplayer2.upstream.DataSource;
 import com.google.android.exoplayer2.upstream.DefaultDataSourceFactory;
 import com.google.android.exoplayer2.upstream.DefaultHttpDataSource;
 import com.google.android.exoplayer2.upstream.DefaultHttpDataSourceFactory;
+import com.google.android.exoplayer2.util.MimeTypes;
 import com.google.android.exoplayer2.util.Util;
 import io.flutter.plugin.common.EventChannel;
 import io.flutter.plugin.common.MethodCall;
@@ -44,11 +56,15 @@ import io.flutter.plugin.common.PluginRegistry;
 import io.flutter.plugin.common.PluginRegistry.Registrar;
 import io.flutter.view.FlutterNativeView;
 import io.flutter.view.TextureRegistry;
+
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+
+
 
 public class VideoPlayerPlugin implements MethodCallHandler {
 
@@ -66,16 +82,22 @@ public class VideoPlayerPlugin implements MethodCallHandler {
 
     private boolean isInitialized = false;
 
+    private DefaultTrackSelector trackSelector;
+
     VideoPlayer(
-        Context context,
-        EventChannel eventChannel,
-        TextureRegistry.SurfaceTextureEntry textureEntry,
-        String dataSource,
-        Result result) {
+            Context context,
+            EventChannel eventChannel,
+            TextureRegistry.SurfaceTextureEntry textureEntry,
+            String dataSource,
+            String subtitleSource,
+            Result result) {
       this.eventChannel = eventChannel;
       this.textureEntry = textureEntry;
 
-      TrackSelector trackSelector = new DefaultTrackSelector();
+      trackSelector = new DefaultTrackSelector();
+      ((DefaultTrackSelector) trackSelector).setParameters(new DefaultTrackSelector.ParametersBuilder()
+              .setRendererDisabled(C.TRACK_TYPE_VIDEO, false)
+              .build());
       exoPlayer = ExoPlayerFactory.newSimpleInstance(context, trackSelector);
 
       Uri uri = Uri.parse(dataSource);
@@ -85,18 +107,45 @@ public class VideoPlayerPlugin implements MethodCallHandler {
         dataSourceFactory = new DefaultDataSourceFactory(context, "ExoPlayer");
       } else {
         dataSourceFactory =
-            new DefaultHttpDataSourceFactory(
-                "ExoPlayer",
-                null,
-                DefaultHttpDataSource.DEFAULT_CONNECT_TIMEOUT_MILLIS,
-                DefaultHttpDataSource.DEFAULT_READ_TIMEOUT_MILLIS,
-                true);
+                new DefaultHttpDataSourceFactory(
+                        "ExoPlayer",
+                        null,
+                        DefaultHttpDataSource.DEFAULT_CONNECT_TIMEOUT_MILLIS,
+                        DefaultHttpDataSource.DEFAULT_READ_TIMEOUT_MILLIS,
+                        true);
       }
 
       MediaSource mediaSource = buildMediaSource(uri, dataSourceFactory, context);
+      if (subtitleSource != null && !subtitleSource.equals("") ) {
+        System.out.println(subtitleSource);
+        Format format = Format.createTextSampleFormat(
+                null,
+                MimeTypes.TEXT_VTT,
+                Format.NO_VALUE,
+                null);
+
+        MediaSource subtitleSourceEng = new SingleSampleMediaSource(Uri.parse(subtitleSource),
+                dataSourceFactory, format, C.TIME_UNSET);
+        mediaSource = new MergingMediaSource(mediaSource, subtitleSourceEng);
+      }
       exoPlayer.prepare(mediaSource);
 
-      setupVideoPlayer(eventChannel, textureEntry, result);
+      exoPlayer.addTextOutput((TextRenderer.Output) cues -> {
+        if (cues != null && cues.size() > 0) {
+          Map<String, Object> event = new HashMap<>();
+          event.put("event", "subtitle");
+          event.put("values", cues.get(0).text.toString());
+          eventSink.success(event);
+        }
+        if (cues != null && cues.size() == 0) {
+          Map<String, Object> event = new HashMap<>();
+          event.put("event", "subtitle");
+          event.put("values", "");
+          eventSink.success(event);
+        }
+      });
+
+      setupVideoPlayer(eventChannel, textureEntry, result, trackSelector);
     }
 
     private static boolean isFileOrAsset(Uri uri) {
@@ -108,84 +157,144 @@ public class VideoPlayerPlugin implements MethodCallHandler {
     }
 
     private MediaSource buildMediaSource(
-        Uri uri, DataSource.Factory mediaDataSourceFactory, Context context) {
+            Uri uri, DataSource.Factory mediaDataSourceFactory, Context context) {
       int type = Util.inferContentType(uri.getLastPathSegment());
       switch (type) {
         case C.TYPE_SS:
           return new SsMediaSource.Factory(
                   new DefaultSsChunkSource.Factory(mediaDataSourceFactory),
                   new DefaultDataSourceFactory(context, null, mediaDataSourceFactory))
-              .createMediaSource(uri);
+                  .createMediaSource(uri);
         case C.TYPE_DASH:
           return new DashMediaSource.Factory(
                   new DefaultDashChunkSource.Factory(mediaDataSourceFactory),
                   new DefaultDataSourceFactory(context, null, mediaDataSourceFactory))
-              .createMediaSource(uri);
+                  .createMediaSource(uri);
         case C.TYPE_HLS:
           return new HlsMediaSource.Factory(mediaDataSourceFactory).createMediaSource(uri);
         case C.TYPE_OTHER:
           return new ExtractorMediaSource.Factory(mediaDataSourceFactory)
-              .setExtractorsFactory(new DefaultExtractorsFactory())
-              .createMediaSource(uri);
+                  .setExtractorsFactory(new DefaultExtractorsFactory())
+                  .createMediaSource(uri);
         default:
-          {
-            throw new IllegalStateException("Unsupported type: " + type);
-          }
+        {
+          throw new IllegalStateException("Unsupported type: " + type);
+        }
       }
     }
 
     private void setupVideoPlayer(
-        EventChannel eventChannel,
-        TextureRegistry.SurfaceTextureEntry textureEntry,
-        Result result) {
+            EventChannel eventChannel,
+            TextureRegistry.SurfaceTextureEntry textureEntry,
+            Result result,
+            DefaultTrackSelector trackSelector) {
 
       eventChannel.setStreamHandler(
-          new EventChannel.StreamHandler() {
-            @Override
-            public void onListen(Object o, EventChannel.EventSink sink) {
-              eventSink.setDelegate(sink);
-            }
+              new EventChannel.StreamHandler() {
+                @Override
+                public void onListen(Object o, EventChannel.EventSink sink) {
+                  eventSink.setDelegate(sink);
+                }
 
-            @Override
-            public void onCancel(Object o) {
-              eventSink.setDelegate(null);
-            }
-          });
+                @Override
+                public void onCancel(Object o) {
+                  eventSink.setDelegate(null);
+                }
+              });
 
       surface = new Surface(textureEntry.surfaceTexture());
       exoPlayer.setVideoSurface(surface);
       setAudioAttributes(exoPlayer);
 
       exoPlayer.addListener(
-          new EventListener() {
+              new EventListener() {
 
-            @Override
-            public void onPlayerStateChanged(final boolean playWhenReady, final int playbackState) {
-              if (playbackState == Player.STATE_BUFFERING) {
-                sendBufferingUpdate();
-              } else if (playbackState == Player.STATE_READY) {
-                if (!isInitialized) {
-                  isInitialized = true;
-                  sendInitialized();
+                @Override
+                public void onPlayerStateChanged(final boolean playWhenReady, final int playbackState) {
+                  if (playbackState == Player.STATE_BUFFERING) {
+                    sendBufferingUpdate();
+                  } else if (playbackState == Player.STATE_READY) {
+                    if (!isInitialized) {
+                      isInitialized = true;
+                      sendInitialized();
+                    }
+                    setIcelandicSubtitles();
+
+                  } else if (playbackState == Player.STATE_ENDED) {
+                    Map<String, Object> event = new HashMap<>();
+                    event.put("event", "completed");
+                    eventSink.success(event);
+                  }
                 }
-              } else if (playbackState == Player.STATE_ENDED) {
-                Map<String, Object> event = new HashMap<>();
-                event.put("event", "completed");
-                eventSink.success(event);
-              }
-            }
 
-            @Override
-            public void onPlayerError(final ExoPlaybackException error) {
-              if (eventSink != null) {
-                eventSink.error("VideoError", "Video player had error " + error, null);
-              }
-            }
-          });
+                @Override
+                public void onPlayerError(final ExoPlaybackException error) {
+                  if (eventSink != null) {
+                    eventSink.error("VideoError", "Video player had error " + error, null);
+                  }
+                }
+              });
 
       Map<String, Object> reply = new HashMap<>();
       reply.put("textureId", textureEntry.id());
       result.success(reply);
+    }
+
+    // Here i want to return the trackNames and make another function for selection
+    private void setIcelandicSubtitles() {
+      boolean isDisabled;
+      TrackGroupArray trackGroups;
+      int rendererIndex = 2;
+      DefaultTrackSelector.SelectionOverride override;
+      CheckedTextView[][] trackViews;
+
+      MappingTrackSelector.MappedTrackInfo trackInfo =
+              trackSelector == null ? null : trackSelector.getCurrentMappedTrackInfo();
+      if (trackSelector == null || trackInfo == null) {
+        // TrackSelector not initialized
+        return;
+      }
+
+      trackGroups = trackInfo.getTrackGroups(rendererIndex);
+      DefaultTrackSelector.Parameters parameters = trackSelector.getParameters();
+      isDisabled = parameters.getRendererDisabled(rendererIndex);
+
+      // Add per-track views.
+      trackViews = new CheckedTextView[trackGroups.length][];
+      for (int groupIndex = 0; groupIndex < trackGroups.length; groupIndex++) {
+        System.out.println("Groupindex:" + groupIndex);
+        TrackGroup group = trackGroups.get(groupIndex);
+        trackViews[groupIndex] = new CheckedTextView[group.length];
+        for (int trackIndex = 0; trackIndex < group.length; trackIndex++) {
+
+
+//          System.out.println("Trackindex: "+ trackIndex);
+//          System.out.println(group.getFormat(trackIndex).language);
+//          System.out.println(group.getFormat(trackIndex).toString());
+//          System.out.println(group.getFormat(trackIndex).containerMimeType);
+//          System.out.println(group.getFormat(trackIndex).label);
+
+          if ( group.getFormat(trackIndex).language != null &&
+                  group.getFormat(trackIndex).language.length() > 0  &&
+                  (group.getFormat(trackIndex).language.equalsIgnoreCase("Icelandic")  ||
+                  group.getFormat(trackIndex).language.equalsIgnoreCase("Íslenska") ||
+                  group.getFormat(trackIndex).language.equalsIgnoreCase("is") ||
+                  group.getFormat(trackIndex).language.equalsIgnoreCase("isl") ||
+                  group.getFormat(trackIndex).language.equalsIgnoreCase("islenska"))
+          ) {
+            DefaultTrackSelector.ParametersBuilder parametersBuilder = trackSelector.buildUponParameters();
+            parametersBuilder.setRendererDisabled(rendererIndex, isDisabled);
+            override = new DefaultTrackSelector.SelectionOverride(groupIndex, trackIndex);
+            if (override != null) {
+              parametersBuilder.setSelectionOverride(rendererIndex, trackGroups, override);
+            } else {
+              parametersBuilder.clearSelectionOverrides(rendererIndex);
+            }
+            trackSelector.setParameters(parametersBuilder);
+          }
+        }
+
+      }
     }
 
     private void sendBufferingUpdate() {
@@ -201,7 +310,7 @@ public class VideoPlayerPlugin implements MethodCallHandler {
     private static void setAudioAttributes(SimpleExoPlayer exoPlayer) {
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
         exoPlayer.setAudioAttributes(
-            new AudioAttributes.Builder().setContentType(C.CONTENT_TYPE_MOVIE).build());
+                new AudioAttributes.Builder().setContentType(C.CONTENT_TYPE_MOVIE).build());
       } else {
         exoPlayer.setAudioStreamType(C.STREAM_TYPE_MUSIC);
       }
@@ -231,6 +340,7 @@ public class VideoPlayerPlugin implements MethodCallHandler {
     long getPosition() {
       return exoPlayer.getCurrentPosition();
     }
+
 
     @SuppressWarnings("SuspiciousNameCombination")
     private void sendInitialized() {
@@ -274,16 +384,16 @@ public class VideoPlayerPlugin implements MethodCallHandler {
   public static void registerWith(Registrar registrar) {
     final VideoPlayerPlugin plugin = new VideoPlayerPlugin(registrar);
     final MethodChannel channel =
-        new MethodChannel(registrar.messenger(), "flutter.io/videoPlayer");
+            new MethodChannel(registrar.messenger(), "flutter.io/videoPlayer");
     channel.setMethodCallHandler(plugin);
     registrar.addViewDestroyListener(
-        new PluginRegistry.ViewDestroyListener() {
-          @Override
-          public boolean onViewDestroy(FlutterNativeView view) {
-            plugin.onDestroy();
-            return false; // We are not interested in assuming ownership of the NativeView.
-          }
-        });
+            new PluginRegistry.ViewDestroyListener() {
+              @Override
+              public boolean onViewDestroy(FlutterNativeView view) {
+                plugin.onDestroy();
+                return false; // We are not interested in assuming ownership of the NativeView.
+              }
+            });
   }
 
   private VideoPlayerPlugin(Registrar registrar) {
@@ -322,51 +432,52 @@ public class VideoPlayerPlugin implements MethodCallHandler {
         disposeAllPlayers();
         break;
       case "create":
-        {
-          TextureRegistry.SurfaceTextureEntry handle = textures.createSurfaceTexture();
-          EventChannel eventChannel =
-              new EventChannel(
-                  registrar.messenger(), "flutter.io/videoPlayer/videoEvents" + handle.id());
+      {
+        TextureRegistry.SurfaceTextureEntry handle = textures.createSurfaceTexture();
+        EventChannel eventChannel =
+                new EventChannel(
+                        registrar.messenger(), "flutter.io/videoPlayer/videoEvents" + handle.id());
 
-          VideoPlayer player;
-          if (call.argument("asset") != null) {
-            String assetLookupKey;
-            if (call.argument("package") != null) {
-              assetLookupKey =
-                  registrar.lookupKeyForAsset(call.argument("asset"), call.argument("package"));
-            } else {
-              assetLookupKey = registrar.lookupKeyForAsset(call.argument("asset"));
-            }
-            player =
-                new VideoPlayer(
-                    registrar.context(),
-                    eventChannel,
-                    handle,
-                    "asset:///" + assetLookupKey,
-                    result);
-            videoPlayers.put(handle.id(), player);
+        VideoPlayer player;
+        if (call.argument("asset") != null) {
+          String assetLookupKey;
+          if (call.argument("package") != null) {
+            assetLookupKey =
+                    registrar.lookupKeyForAsset(call.argument("asset"), call.argument("package"));
           } else {
-            player =
-                new VideoPlayer(
-                    registrar.context(), eventChannel, handle, call.argument("uri"), result);
-            videoPlayers.put(handle.id(), player);
+            assetLookupKey = registrar.lookupKeyForAsset(call.argument("asset"));
           }
-          break;
+          player =
+                  new VideoPlayer(
+                          registrar.context(),
+                          eventChannel,
+                          handle,
+                          "asset:///" + assetLookupKey,
+                          null,
+                          result);
+          videoPlayers.put(handle.id(), player);
+        } else {
+          player =
+                  new VideoPlayer(
+                          registrar.context(), eventChannel, handle, call.argument("uri"), call.argument("subtitleSource"), result);
+          videoPlayers.put(handle.id(), player);
         }
+        break;
+      }
       default:
-        {
-          long textureId = ((Number) call.argument("textureId")).longValue();
-          VideoPlayer player = videoPlayers.get(textureId);
-          if (player == null) {
-            result.error(
-                "Unknown textureId",
-                "No video player associated with texture id " + textureId,
-                null);
-            return;
-          }
-          onMethodCall(call, result, textureId, player);
-          break;
+      {
+        long textureId = ((Number) call.argument("textureId")).longValue();
+        VideoPlayer player = videoPlayers.get(textureId);
+        if (player == null) {
+          result.error(
+                  "Unknown textureId",
+                  "No video player associated with texture id " + textureId,
+                  null);
+          return;
         }
+        onMethodCall(call, result, textureId, player);
+        break;
+      }
     }
   }
 
