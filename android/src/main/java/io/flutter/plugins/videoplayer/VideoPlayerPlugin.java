@@ -267,7 +267,7 @@ public class VideoPlayerPlugin implements MethodCallHandler {
         trackViews[groupIndex] = new CheckedTextView[group.length];
         for (int trackIndex = 0; trackIndex < group.length; trackIndex++) {
 
-
+//          Here we can see information about the tracks
 //          System.out.println("Trackindex: "+ trackIndex);
 //          System.out.println(group.getFormat(trackIndex).language);
 //          System.out.println(group.getFormat(trackIndex).toString());
