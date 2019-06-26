@@ -35,6 +35,27 @@ class DurationRange {
   String toString() => '$runtimeType(start: $start, end: $end)';
 }
 
+class Subtitle {
+  Subtitle({this.language, this.label, this.trackIndex, this.groupIndex, this.renderIndex});
+  
+  final String language;
+  final String label;
+  final int trackIndex;
+  final int groupIndex;
+  final int renderIndex;
+
+  @override
+  String toString() => '$runtimeType(language: $language, label: $label, trackIndex: $trackIndex, groupIndex: $groupIndex, renderIndex: $renderIndex)';
+}
+
+Subtitle _raw2Subtitle(Map raw) => Subtitle(
+  language: raw['language'] ?? "",
+  label: raw['label'] ?? "",
+  trackIndex: raw['trackIndex'] ?? -1,
+  groupIndex: raw['groupIndex'] ?? -1,
+  renderIndex: raw['renderIndex'] ?? -1,
+);
+
 /// The duration, current position, buffering state, error state and settings
 /// of a [VideoPlayerController].
 class VideoPlayerValue {
@@ -48,6 +69,7 @@ class VideoPlayerValue {
     this.isBuffering = false,
     this.volume = 1.0,
     this.subtitle = "",
+    this.subtitleList = const <Subtitle>[],
     this.errorDescription,
   });
 
@@ -82,6 +104,9 @@ class VideoPlayerValue {
   /// The current subtitle of the playback.
   final String subtitle;
 
+  /// Available subtitles from stream.
+  final List<Subtitle> subtitleList;
+
   /// A description of the error if present.
   ///
   /// If [hasError] is false this is [null].
@@ -106,6 +131,7 @@ class VideoPlayerValue {
     bool isBuffering,
     double volume,
     String subtitle,
+    List<Subtitle> subtitleList,
     String errorDescription,
   }) {
     return VideoPlayerValue(
@@ -118,6 +144,7 @@ class VideoPlayerValue {
       isBuffering: isBuffering ?? this.isBuffering,
       volume: volume ?? this.volume,
       subtitle: subtitle ?? this.subtitle,
+      subtitleList: subtitleList?? this.subtitleList,
       errorDescription: errorDescription ?? this.errorDescription,
     );
   }
@@ -134,6 +161,7 @@ class VideoPlayerValue {
         'isBuffering: $isBuffering'
         'volume: $volume, '
         'subtitle: $subtitle, '
+        'subtitleList: $subtitleList, '
         'errorDescription: $errorDescription)';
   }
 }
@@ -273,6 +301,13 @@ class VideoPlayerController extends ValueNotifier<VideoPlayerValue> {
         case 'subtitle':
           value = value.copyWith(subtitle: map['values']);
           break;
+        case 'subtitleList':
+          final List<Map> values = List<Map>.from(map['values']);
+          List<Subtitle> returnList = values.map(_raw2Subtitle).toList();
+          value = value.copyWith(
+              subtitleList: returnList,
+          );
+          break;
       }
     }
 
@@ -392,6 +427,22 @@ class VideoPlayerController extends ValueNotifier<VideoPlayerValue> {
     );
   }
 
+  Future<void> _setSubtitles(int trackIndex, int groupIndex) async {
+    if (!value.initialized || _isDisposed) {
+      return;
+    }
+    // TODO(amirh): remove this on when the invokeMethod update makes it to stable Flutter.
+    // https://github.com/flutter/flutter/issues/26431
+    // ignore: strong_mode_implicit_dynamic_method
+    await _channel.invokeMethod(
+      'setSubtitles',
+      <String, dynamic>{
+        'textureId': _textureId,
+        'trackIndex': trackIndex,
+        'groupIndex': groupIndex},
+    );
+  }
+
   /// The position in the current video.
   Future<Duration> get position async {
     if (_isDisposed) {
@@ -434,6 +485,11 @@ class VideoPlayerController extends ValueNotifier<VideoPlayerValue> {
   Future<void> setVolume(double volume) async {
     value = value.copyWith(volume: volume.clamp(0.0, 1.0));
     await _applyVolume();
+  }
+
+  /// Sets the subtitle of  [this].
+  Future<void> setSubtitles(int trackIndex, int groupIndex) async {
+    await _setSubtitles(trackIndex, groupIndex);
   }
 
 }

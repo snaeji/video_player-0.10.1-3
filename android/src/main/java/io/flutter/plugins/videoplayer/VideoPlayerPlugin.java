@@ -117,7 +117,6 @@ public class VideoPlayerPlugin implements MethodCallHandler {
 
       MediaSource mediaSource = buildMediaSource(uri, dataSourceFactory, context);
       if (subtitleSource != null && !subtitleSource.equals("") ) {
-        System.out.println(subtitleSource);
         Format format = Format.createTextSampleFormat(
                 null,
                 MimeTypes.TEXT_VTT,
@@ -218,7 +217,7 @@ public class VideoPlayerPlugin implements MethodCallHandler {
                       isInitialized = true;
                       sendInitialized();
                     }
-                    setIcelandicSubtitles();
+                    getSubtitles();
 
                   } else if (playbackState == Player.STATE_ENDED) {
                     Map<String, Object> event = new HashMap<>();
@@ -240,13 +239,51 @@ public class VideoPlayerPlugin implements MethodCallHandler {
       result.success(reply);
     }
 
-    // Here i want to return the trackNames and make another function for selection
-    private void setIcelandicSubtitles() {
+    private void getSubtitles() {
+      List<Map<?,?>> rawSubtitleItems = new ArrayList<Map<?,?>>();
+      TrackGroupArray trackGroups;
+      int rendererIndex = 2;
+      DefaultTrackSelector.SelectionOverride override;
+
+      MappingTrackSelector.MappedTrackInfo trackInfo =
+              trackSelector == null ? null : trackSelector.getCurrentMappedTrackInfo();
+      if (trackSelector == null || trackInfo == null) {
+        // TrackSelector not initialized
+        return;
+      }
+
+      trackGroups = trackInfo.getTrackGroups(rendererIndex);
+      DefaultTrackSelector.Parameters parameters = trackSelector.getParameters();
+
+      // Add per-track views.
+      for (int groupIndex = 0; groupIndex < trackGroups.length; groupIndex++) {
+        TrackGroup group = trackGroups.get(groupIndex);
+        for (int trackIndex = 0; trackIndex < group.length; trackIndex++) {
+
+          if (group.getFormat(trackIndex).language != null && group.getFormat(trackIndex).label != null) {
+            Map<String,Object> raw = new HashMap<String,Object>();
+            raw.put("language", group.getFormat(trackIndex).language);
+            raw.put("label", group.getFormat(trackIndex).label);
+            raw.put("trackIndex", trackIndex);
+            raw.put("groupIndex", groupIndex);
+            raw.put("renderIndex", rendererIndex);
+            rawSubtitleItems.add(raw);
+          }
+
+        }
+      }
+      Map<String, Object> event = new HashMap<>();
+      event.put("event", "subtitleList");
+      event.put("values", rawSubtitleItems);
+      eventSink.success(event);
+
+    }
+
+    void setSubtitles(int trackIndex, int groupIndex) {
       boolean isDisabled;
       TrackGroupArray trackGroups;
       int rendererIndex = 2;
       DefaultTrackSelector.SelectionOverride override;
-      CheckedTextView[][] trackViews;
 
       MappingTrackSelector.MappedTrackInfo trackInfo =
               trackSelector == null ? null : trackSelector.getCurrentMappedTrackInfo();
@@ -258,43 +295,15 @@ public class VideoPlayerPlugin implements MethodCallHandler {
       trackGroups = trackInfo.getTrackGroups(rendererIndex);
       DefaultTrackSelector.Parameters parameters = trackSelector.getParameters();
       isDisabled = parameters.getRendererDisabled(rendererIndex);
-
-      // Add per-track views.
-      trackViews = new CheckedTextView[trackGroups.length][];
-      for (int groupIndex = 0; groupIndex < trackGroups.length; groupIndex++) {
-        System.out.println("Groupindex:" + groupIndex);
-        TrackGroup group = trackGroups.get(groupIndex);
-        trackViews[groupIndex] = new CheckedTextView[group.length];
-        for (int trackIndex = 0; trackIndex < group.length; trackIndex++) {
-
-//          Here we can see information about the tracks
-//          System.out.println("Trackindex: "+ trackIndex);
-//          System.out.println(group.getFormat(trackIndex).language);
-//          System.out.println(group.getFormat(trackIndex).toString());
-//          System.out.println(group.getFormat(trackIndex).containerMimeType);
-//          System.out.println(group.getFormat(trackIndex).label);
-
-          if ( group.getFormat(trackIndex).language != null &&
-                  group.getFormat(trackIndex).language.length() > 0  &&
-                  (group.getFormat(trackIndex).language.equalsIgnoreCase("Icelandic")  ||
-                  group.getFormat(trackIndex).language.equalsIgnoreCase("Íslenska") ||
-                  group.getFormat(trackIndex).language.equalsIgnoreCase("is") ||
-                  group.getFormat(trackIndex).language.equalsIgnoreCase("isl") ||
-                  group.getFormat(trackIndex).language.equalsIgnoreCase("islenska"))
-          ) {
-            DefaultTrackSelector.ParametersBuilder parametersBuilder = trackSelector.buildUponParameters();
-            parametersBuilder.setRendererDisabled(rendererIndex, isDisabled);
-            override = new DefaultTrackSelector.SelectionOverride(groupIndex, trackIndex);
-            if (override != null) {
-              parametersBuilder.setSelectionOverride(rendererIndex, trackGroups, override);
-            } else {
-              parametersBuilder.clearSelectionOverrides(rendererIndex);
-            }
-            trackSelector.setParameters(parametersBuilder);
-          }
-        }
-
+      DefaultTrackSelector.ParametersBuilder parametersBuilder = trackSelector.buildUponParameters();
+      parametersBuilder.setRendererDisabled(rendererIndex, isDisabled);
+      override = new DefaultTrackSelector.SelectionOverride(groupIndex, trackIndex);
+      if (override != null) {
+        parametersBuilder.setSelectionOverride(rendererIndex, trackGroups, override);
+      } else {
+        parametersBuilder.clearSelectionOverrides(rendererIndex);
       }
+      trackSelector.setParameters(parametersBuilder);
     }
 
     private void sendBufferingUpdate() {
@@ -489,6 +498,10 @@ public class VideoPlayerPlugin implements MethodCallHandler {
         break;
       case "setVolume":
         player.setVolume(call.argument("volume"));
+        result.success(null);
+        break;
+      case "setSubtitles":
+        player.setSubtitles(call.argument("trackIndex"),call.argument("groupIndex"));
         result.success(null);
         break;
       case "play":
