@@ -1,4 +1,4 @@
-# Video player plugin edited to fetch subtitles from HLS stream and load from VTT.
+# Video player plugin edited to fetch subtitles from HLS stream and load VTT from url.
 
 # video_player-0.10.1-3
 
