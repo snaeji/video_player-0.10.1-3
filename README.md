@@ -1,5 +1,7 @@
 # Video player plugin edited to fetch subtitles from HLS stream and load VTT from url.
 
+# Only works on Android!
+
 # video_player-0.10.1-3
 
 Works with https://github.com/snaeji/chewie-0.9.7 for displaying CC button and subtitles
