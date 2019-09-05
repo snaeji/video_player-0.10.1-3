@@ -1,6 +1,6 @@
 # Video player plugin edited to fetch subtitles from HLS stream and load VTT from url.
 
-# Only works on Android!
+# Only works on Android! Help wanted for iOS.
 
 # video_player-0.10.1-3
 
