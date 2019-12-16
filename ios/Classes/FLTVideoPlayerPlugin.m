@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#import "VideoPlayerPlugin.h"
+#import "FLTVideoPlayerPlugin.h"
 #import <AVFoundation/AVFoundation.h>
 #import <GLKit/GLKit.h>
 
@@ -82,20 +82,22 @@ static void* playbackBufferFullContext = &playbackBufferFullContext;
             options:NSKeyValueObservingOptionInitial | NSKeyValueObservingOptionNew
             context:playbackBufferFullContext];
 
-  [[NSNotificationCenter defaultCenter] addObserverForName:AVPlayerItemDidPlayToEndTimeNotification
-                                                    object:[_player currentItem]
-                                                     queue:[NSOperationQueue mainQueue]
-                                                usingBlock:^(NSNotification* note) {
-                                                  if (self->_isLooping) {
-                                                    AVPlayerItem* p = [note object];
-                                                    [p seekToTime:kCMTimeZero
-                                                        completionHandler:nil];
-                                                  } else {
-                                                    if (self->_eventSink) {
-                                                      self->_eventSink(@{@"event" : @"completed"});
-                                                    }
-                                                  }
-                                                }];
+  // Add an observer that will respond to itemDidPlayToEndTime
+  [[NSNotificationCenter defaultCenter] addObserver:self
+                                           selector:@selector(itemDidPlayToEndTime:)
+                                               name:AVPlayerItemDidPlayToEndTimeNotification
+                                             object:item];
+}
+
+- (void)itemDidPlayToEndTime:(NSNotification*)notification {
+  if (_isLooping) {
+    AVPlayerItem* p = [notification object];
+    [p seekToTime:kCMTimeZero completionHandler:nil];
+  } else {
+    if (_eventSink) {
+      _eventSink(@{@"event" : @"completed"});
+    }
+  }
 }
 
 static inline CGFloat radiansToDegrees(CGFloat radians) {
@@ -361,6 +363,12 @@ static inline CGFloat radiansToDegrees(CGFloat radians) {
   }
 }
 
+- (void)onTextureUnregistered {
+  dispatch_async(dispatch_get_main_queue(), ^{
+    [self dispose];
+  });
+}
+
 - (FlutterError* _Nullable)onCancelWithArguments:(id _Nullable)arguments {
   _eventSink = nil;
   return nil;
@@ -485,7 +493,22 @@ static inline CGFloat radiansToDegrees(CGFloat radians) {
     if ([@"dispose" isEqualToString:call.method]) {
       [_registry unregisterTexture:textureId];
       [_players removeObjectForKey:@(textureId)];
-      [player dispose];
+      // If the Flutter contains https://github.com/flutter/engine/pull/12695,
+      // the `player` is disposed via `onTextureUnregistered` at the right time.
+      // Without https://github.com/flutter/engine/pull/12695, there is no guarantee that the
+      // texture has completed the un-reregistration. It may leads a crash if we dispose the
+      // `player` before the texture is unregistered. We add a dispatch_after hack to make sure the
+      // texture is unregistered before we dispose the `player`.
+      //
+      // TODO(cyanglaz): Remove this dispatch block when
+      // https://github.com/flutter/flutter/commit/8159a9906095efc9af8b223f5e232cb63542ad0b is in
+      // stable And update the min flutter version of the plugin to the stable version.
+      dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1 * NSEC_PER_SEC)),
+                     dispatch_get_main_queue(), ^{
+                       if (!player.disposed) {
+                         [player dispose];
+                       }
+                     });
       result(nil);
     } else if ([@"setLooping" isEqualToString:call.method]) {
       [player setIsLooping:[argsMap[@"looping"] boolValue]];

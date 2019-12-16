@@ -1,3 +1,87 @@
+## 0.10.5
+
+* Support `web` by default.
+* Require Flutter SDK 1.12.13+hotfix.4 or greater.
+
+## 0.10.4+2
+
+* Remove the deprecated `author:` field form pubspec.yaml
+* Migrate the plugin to the pubspec platforms manifest.
+* Require Flutter SDK 1.10.0 or greater.
+
+## 0.10.4+1
+
+* Fix pedantic lints. This fixes some potential race conditions in cases where
+  futures within some video_player methods weren't being awaited correctly.
+
+## 0.10.4
+
+* Port plugin code to use the federated Platform Interface, instead of a MethodChannel directly.
+
+## 0.10.3+3
+
+* Add DartDocs and unit tests.
+
+## 0.10.3+2
+
+* Update the homepage to point to the new plugin location
+
+## 0.10.3+1
+
+* Dispose `FLTVideoPlayer` in `onTextureUnregistered` callback on iOS.
+* Add a temporary fix to dispose the `FLTVideoPlayer` with a delay to avoid race condition.
+* Updated the example app to include a new page that pop back after video is done playing.
+
+## 0.10.3
+
+* Add support for the v2 Android embedding. This shouldn't impact existing
+  functionality.
+
+## 0.10.2+6
+
+* Remove AndroidX warnings.
+
+## 0.10.2+5
+
+* Update unit test for compatibility with Flutter stable branch.
+
+## 0.10.2+4
+
+* Define clang module for iOS.
+
+## 0.10.2+3
+
+* Fix bug where formatHint was not being pass down to network sources.
+
+## 0.10.2+2
+
+* Update and migrate iOS example project.
+
+## 0.10.2+1
+
+* Use DefaultHttpDataSourceFactory only when network schemas and use
+DefaultHttpDataSourceFactory by default.
+
+## 0.10.2
+
+* **Android Only** Adds optional VideoFormat used to signal what format the plugin should try.
+
+## 0.10.1+7
+
+* Fix tests by ignoring deprecated member use.
+
+## 0.10.1+6
+
+* [iOS] Fixed a memory leak with notification observing.
+
+## 0.10.1+5
+
+* Fix race condition while disposing the VideoController.
+
+## 0.10.1+4
+
+* Fixed syntax error in README.md.
+
 ## 0.10.1+3
 
 * Add missing template type parameter to `invokeMethod` calls.

@@ -1,18 +1,10 @@
-# Video player plugin edited to fetch subtitles from HLS stream and load VTT from url.
-
-# Only works on Android! Help wanted for iOS.
-
-# video_player-0.10.1-3
-
-Works with https://github.com/snaeji/chewie-0.9.7 for displaying CC button and subtitles
-
 # Video Player plugin for Flutter
 
 [![pub package](https://img.shields.io/pub/v/video_player.svg)](https://pub.dartlang.org/packages/video_player)
 
 A Flutter plugin for iOS and Android for playing back video on a Widget surface.
 
-![The example app running in iOS](https://github.com/flutter/plugins/blob/master/packages/video_player/doc/demo_ipod.gif?raw=true)
+![The example app running in iOS](https://github.com/flutter/plugins/blob/master/packages/video_player/video_player/doc/demo_ipod.gif?raw=true)
 
 *Note*: This plugin is still under development, and some APIs might not be available yet.
 [Feedback welcome](https://github.com/flutter/flutter/issues) and
@@ -40,7 +32,7 @@ This entry allows your app to access video files by URL.
 
 ### Android
 
-Ensure the following permission is present in your Android Manifest file, located in `<project root>/android/app/src/main/AndroidManifest.xml:
+Ensure the following permission is present in your Android Manifest file, located in `<project root>/android/app/src/main/AndroidManifest.xml`:
 
 ```xml
 <uses-permission android:name="android.permission.INTERNET"/>
