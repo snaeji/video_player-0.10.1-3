@@ -129,7 +129,7 @@ public class VideoPlayerPlugin implements MethodCallHandler {
       }
       exoPlayer.prepare(mediaSource);
 
-      exoPlayer.addTextOutput((TextRenderer.Output) cues -> {
+      exoPlayer.addTextOutput((TextOutput) cues -> {
         if (cues != null && cues.size() > 0) {
           Map<String, Object> event = new HashMap<>();
           event.put("event", "subtitle");
